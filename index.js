@@ -250,8 +250,9 @@ async function fetchPodcastEpisodes(spotifyApi, podcasts) {
           show: podcast.name,
           type: "episode",
           position: podcast.position || null,
+          podcastOrder: podcast._order || null,
         });
-        console.log(`    📌 ${episode.name}`);
+        console.log(`    📌 [${String(podcast._order || "?").padStart(2, "0")}] ${episode.name}`);
       }
     } catch (err) {
       console.error(`    ⚠️  Failed to fetch ${podcast.name}: ${err.message}`);
@@ -584,10 +585,13 @@ async function main() {
 
   const pinnedPodcasts = filteredPodcasts.filter((podcast) => podcast.position === "first");
   const shuffledPodcasts = shuffle(filteredPodcasts.filter((podcast) => podcast.position !== "first"));
-  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts];
+  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts].map((podcast, index) => ({
+    ...podcast,
+    _order: index + 1,
+  }));
 
   if (orderedPodcasts.length > 0) {
-    console.log("🎙️ Podcast order:");
+    console.log("🎙️ Podcast block order:");
     orderedPodcasts.forEach((podcast, index) => {
       const label = podcast.position === "first" ? `${podcast.name} [pinned]` : podcast.name;
       const details = [`episodes=${podcast.episodes || 1}`];
@@ -649,11 +653,21 @@ async function main() {
   console.log("📋 Final playlist order:");
   mixed.forEach((item, index) => {
     if (item.type === "episode") {
-      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎙️ [${item.show}] ${item.name}`);
+      const block = item.podcastOrder ? `block ${String(item.podcastOrder).padStart(2, "0")}` : "block ?";
+      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎙️ [${block}] [${item.show}] ${item.name}`);
     } else {
       console.log(`    ${String(index + 1).padStart(2, "0")}. 🎵 ${item.name} — ${item.artist}`);
     }
   });
+
+  const mixedEpisodes = mixed.filter((item) => item.type === "episode");
+  if (mixedEpisodes.length > 0) {
+    console.log("🎙️ Final podcast item order:");
+    mixedEpisodes.forEach((item, index) => {
+      const block = item.podcastOrder ? `block ${String(item.podcastOrder).padStart(2, "0")}` : "block ?";
+      console.log(`    ${String(index + 1).padStart(2, "0")}. [${block}] [${item.show}] ${item.name}`);
+    });
+  }
 
   // Step 10: Push the final mixed playlist to Spotify
   await updatePlaylist(spotifyApi, config.playlist_id, mixed);

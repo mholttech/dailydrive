@@ -39,18 +39,13 @@ on:
 jobs:
   update-playlist:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install dependencies
         run: npm install
-
-      # Copies config.yaml and injects secrets for CI run using Node.js
       - name: Prepare config.yaml with secrets
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
@@ -65,17 +60,16 @@ jobs:
             fs.writeFileSync("config.yaml", yaml.dump(config));
             console.log("config.yaml prepared with injected secrets.");
           '
-
-      # Writes the token file using your stored refresh token.
-      # expires_at is set to 0 so index.js always refreshes the access token on startup.
       - name: Write Spotify token
         env:
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
           echo '{"access_token":"","refresh_token":"'"$SPOTIFY_REFRESH_TOKEN"'","expires_at":0}' > .spotify-token.json
-
-
-      # Restore persistent state from GitHub Actions variable (if set)
+      # Debug: Print DD_STATE_JSON before run
+      - name: Debug - Print DD_STATE_JSON before run
+        run: |
+          echo "DD_STATE_JSON before run:"
+          echo "${{ vars.DD_STATE_JSON }}"
       - name: Restore persistent state
         id: restore_state
         run: |
@@ -86,7 +80,6 @@ jobs:
           else
             echo "No DD_STATE_JSON variable set; starting with empty state."
           fi
-
       - name: Run Daily Drive
         id: run_dd
         run: |
@@ -96,8 +89,16 @@ jobs:
             dry-run)      node index.js --dry-run > dd_output.txt 2>&1 ;;
             *)            npm start > dd_output.txt 2>&1 ;;
           esac
-
-      # Persist new state from state-gh.json file
+      # Debug: Print state-gh.json after run
+      - name: Debug - Print state-gh.json after run
+        if: always()
+        run: |
+          echo "state-gh.json after run:"
+          if [ -f state-gh.json ]; then
+            cat state-gh.json
+          else
+            echo "state-gh.json not found."
+          fi
       - name: Persist state to GitHub variable
         if: success() && github.event.inputs.mode != 'dry-run'
         env:
@@ -114,10 +115,6 @@ jobs:
           else
             echo "state-gh.json not found."
           fi
-
-      # Optional: write the (possibly rotated) refresh token back to GitHub Secrets.
-      # Requires a Personal Access Token with `secrets:write` scope stored as GH_PAT.
-      # If GH_PAT is not set, this step is skipped silently.
       - name: Persist refresh token if rotated
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}

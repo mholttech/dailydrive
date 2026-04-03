@@ -74,6 +74,10 @@ Some popular ones to get you started:
 | Freakonomics Radio | `6z4NLXyHPga1UmSJsPK7G1` |
 | Up First (NPR) | `2mTUnDkuKUkhiueKcVWoP0` |
 | The Journal (WSJ) | `0KxdEdeY2Wb3zr28dMlQva` |
+| FT News | `1410RabA4XOqO6IV8p0gYF` |
+| WSJ What's News | `59176gU8vcFho6Sc1dm3Lu` |
+| CNN This Morning | `0eX8p0ZTVAzrOKctLs3HiT` |
+| Morning Brew Daily | `7nc7OQdPTekErtFSRxOBKh` |
 
 ---
 

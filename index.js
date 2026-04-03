@@ -84,6 +84,19 @@ function loadState() {
 }
 
 /**
+ * Loads the latest state directly from state.json on disk.
+ * This ignores STATE_JSON so we can read changes written during the current run.
+ */
+function loadStateFromDisk() {
+  if (!fs.existsSync(STATE_FILE)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Saves state as compact JSON. In GitHub Actions, prints a special line for workflow to capture.
  * Locally, also writes to state.json for dev/debug.
  */
@@ -623,8 +636,9 @@ async function main() {
 
   // Step 11: Save state (only music tracks and last refresh info)
   if (!DRY_RUN) {
-    // Always load the full state so we can preserve random_podcasts
-    const state = loadState();
+    // Reload the latest on-disk state so we preserve random_podcasts entries
+    // written earlier in this run by fetchPodcastEpisodes().
+    const state = loadStateFromDisk();
     if (PODCAST_ONLY) {
       // In podcast-only mode, preserve the saved music tracks from the full refresh
       state.music_tracks = state.music_tracks || tracks;

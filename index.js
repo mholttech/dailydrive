@@ -496,8 +496,25 @@ async function main() {
     process.exit(1);
   }
 
+
+  // Step 4.5: Filter podcasts based on morning_only flag and America/Los_Angeles timezone
+  function isMorningInPST() {
+    // Use Intl.DateTimeFormat to get hour in America/Los_Angeles
+    const now = new Date();
+    const options = { hour: 'numeric', hour12: false, timeZone: 'America/Los_Angeles' };
+    const hour = Number(new Intl.DateTimeFormat('en-US', options).format(now));
+    return hour < 12;
+  }
+  const allPodcasts = config.podcasts || [];
+  const filteredPodcasts = allPodcasts.filter(podcast => {
+    if (podcast.morning_only) {
+      return isMorningInPST();
+    }
+    return true;
+  });
+
   // Step 5: Fetch the latest podcast episodes
-  const episodes = await fetchPodcastEpisodes(spotifyApi, config.podcasts || []);
+  const episodes = await fetchPodcastEpisodes(spotifyApi, filteredPodcasts);
 
   // ...existing code...
 

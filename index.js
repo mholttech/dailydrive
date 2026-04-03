@@ -587,12 +587,14 @@ async function main() {
   const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts];
 
   if (orderedPodcasts.length > 0) {
-    console.log(
-      "🎙️ Podcast order:",
-      orderedPodcasts
-        .map((podcast) => (podcast.position === "first" ? `${podcast.name} [pinned]` : podcast.name))
-        .join(" -> ")
-    );
+    console.log("🎙️ Podcast order:");
+    orderedPodcasts.forEach((podcast, index) => {
+      const label = podcast.position === "first" ? `${podcast.name} [pinned]` : podcast.name;
+      const details = [`episodes=${podcast.episodes || 1}`];
+      if (podcast.random) details.push("random");
+      if (podcast.morning_only) details.push("morning_only");
+      console.log(`    ${String(index + 1).padStart(2, "0")}. ${label}${details.length ? ` (${details.join(", ")})` : ""}`);
+    });
   }
 
   // Step 5: Fetch the latest podcast episodes
@@ -643,6 +645,15 @@ async function main() {
   // Step 9: Mix podcasts and music according to the configured pattern
   console.log(`\n🔀 Mixing with pattern: ${config.mix_pattern || "PMMM"}`);
   const mixed = [...pinnedFirst, ...mixContent(mixableEpisodes, tracks, config.mix_pattern)];
+
+  console.log("📋 Final playlist order:");
+  mixed.forEach((item, index) => {
+    if (item.type === "episode") {
+      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎙️ [${item.show}] ${item.name}`);
+    } else {
+      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎵 ${item.name} — ${item.artist}`);
+    }
+  });
 
   // Step 10: Push the final mixed playlist to Spotify
   await updatePlaylist(spotifyApi, config.playlist_id, mixed);

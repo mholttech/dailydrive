@@ -13,7 +13,6 @@ on:
           - full
           - podcast-only
           - dry-run
-        required: false
 
   # Scheduled runs (Monday–Friday only). GitHub Actions cron runs in UTC.
   # These are set to EST (UTC-5). During EDT (UTC-4, roughly Mar–Nov),

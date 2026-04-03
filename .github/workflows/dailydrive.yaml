@@ -1,3 +1,19 @@
+      # Debug: Print DD_STATE_JSON before run
+      - name: Debug - Print DD_STATE_JSON before run
+        run: |
+          echo "DD_STATE_JSON before run:"
+          echo "${{ vars.DD_STATE_JSON }}"
+
+      # Debug: Print state-gh.json after run
+      - name: Debug - Print state-gh.json after run
+        if: always()
+        run: |
+          echo "state-gh.json after run:"
+          if [ -f state-gh.json ]; then
+            cat state-gh.json
+          else
+            echo "state-gh.json not found."
+          fi
 name: Daily Drive
 
 on:

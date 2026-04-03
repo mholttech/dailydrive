@@ -90,8 +90,9 @@ function saveState(state) {
   const compact = JSON.stringify(state);
   // Always write to disk for local/dev
   fs.writeFileSync(STATE_FILE, compact);
-  // Always write to state-gh.json for GitHub Actions workflow to read
-  fs.writeFileSync("state-gh.json", compact);
+  // For GitHub Actions, only persist random_podcasts
+  const randomPodcastsState = JSON.stringify({ random_podcasts: state.random_podcasts || {} });
+  fs.writeFileSync("state-gh.json", randomPodcastsState);
 }
 
 /**
@@ -160,43 +161,43 @@ async function fetchPodcastEpisodes(spotifyApi, podcasts) {
     try {
       let selectedEpisodes = [];
       if (podcast.random) {
-        // Use persistent selection for this podcast and date if available
+        // Always include the latest episode first (never persisted)
+        const latestData = await spotifyApi.getShowEpisodes(podcast.id, {
+          limit: 1,
+          market: "US",
+        });
+        const latest = latestData.body.items[0];
+        if (latest) {
+          selectedEpisodes.push(latest);
+        }
+        // Use persistent random selection for this podcast and date if available
         if (!state.random_podcasts[podcast.id]) state.random_podcasts[podcast.id] = {};
-        if (state.random_podcasts[podcast.id][today]) {
-          // Use saved episode URIs for today
-          const uris = state.random_podcasts[podcast.id][today];
-          // Fetch episode details for these URIs
-          const data = await spotifyApi.getShowEpisodes(podcast.id, { limit: 50, market: "US" });
-          const pool = data.body.items;
-          selectedEpisodes = uris.map(uri => pool.find(ep => ep.uri === uri)).filter(Boolean);
-        } else {
-          // Always include the latest episode first
-          const latestData = await spotifyApi.getShowEpisodes(podcast.id, {
-            limit: 1,
-            market: "US",
-          });
-          const latest = latestData.body.items[0];
-          if (latest) {
-            selectedEpisodes.push(latest);
-          }
-          // Fetch a pool of recent episodes (up to 50)
+        let randomUris = state.random_podcasts[podcast.id][today];
+        if (!randomUris) {
+          // Fetch a pool of recent episodes (up to 50), excluding the latest
           const data = await spotifyApi.getShowEpisodes(podcast.id, {
             limit: 50,
             market: "US",
           });
-          // Exclude the latest episode if already included
-          const pool = data.body.items.filter(ep => !selectedEpisodes.find(e => e.uri === ep.uri));
-          // Randomly select (count-1) more episodes
+          const pool = data.body.items.filter(ep => !latest || ep.uri !== latest.uri);
+          // Randomly select (count-1) episodes
           const used = new Set();
-          while (selectedEpisodes.length < count && used.size < pool.length) {
+          randomUris = [];
+          while (randomUris.length < count - 1 && used.size < pool.length) {
             let idx;
             do { idx = Math.floor(Math.random() * pool.length); } while (used.has(idx));
             used.add(idx);
-            selectedEpisodes.push(pool[idx]);
+            randomUris.push(pool[idx].uri);
           }
-          // Save today's selection for this podcast
-          state.random_podcasts[podcast.id][today] = selectedEpisodes.map(ep => ep.uri);
+          // Save today's random selection for this podcast (only random, not latest)
+          state.random_podcasts[podcast.id][today] = randomUris;
           saveState(state);
+        }
+        // Fetch episode details for the random URIs
+        if (randomUris.length > 0) {
+          const data = await spotifyApi.getShowEpisodes(podcast.id, { limit: 50, market: "US" });
+          const pool = data.body.items;
+          selectedEpisodes = selectedEpisodes.concat(randomUris.map(uri => pool.find(ep => ep.uri === uri)).filter(Boolean));
         }
       } else {
         // Just fetch the most recent episodes
@@ -599,18 +600,18 @@ async function main() {
 
   // Step 11: Save state (only music tracks and last refresh info)
   if (!DRY_RUN) {
-    const newState = {};
+    // Always load the full state so we can preserve random_podcasts
+    const state = loadState();
     if (PODCAST_ONLY) {
       // In podcast-only mode, preserve the saved music tracks from the full refresh
-      const state = loadState();
-      newState.music_tracks = state.music_tracks || tracks;
-      newState.last_full_refresh = state.last_full_refresh || null;
+      state.music_tracks = state.music_tracks || tracks;
+      state.last_full_refresh = state.last_full_refresh || null;
     } else {
       // In full refresh mode, save the music tracks for hourly podcast-only runs to reuse
-      newState.music_tracks = tracks;
-      newState.last_full_refresh = new Date().toISOString();
+      state.music_tracks = tracks;
+      state.last_full_refresh = new Date().toISOString();
     }
-    saveState(newState);
+    saveState(state);
     console.log("💾 State saved to state.json");
   }
 }

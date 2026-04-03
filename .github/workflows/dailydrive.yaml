@@ -83,7 +83,9 @@ jobs:
 
       # Persist new state from state-gh.json file
       - name: Persist state to GitHub variable
-        if: always()
+        if: success() && github.event.inputs.mode != 'dry-run'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           if [ -f state-gh.json ]; then
             STATE=$(cat state-gh.json)
@@ -101,7 +103,6 @@ jobs:
       # Requires a Personal Access Token with `secrets:write` scope stored as GH_PAT.
       # If GH_PAT is not set, this step is skipped silently.
       - name: Persist refresh token if rotated
-        if: success() && github.event.inputs.mode != 'dry-run'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |

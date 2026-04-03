@@ -2,8 +2,6 @@ name: Daily Drive
 
 on:
   # Manual trigger — inputs override repository variables for one-off runs.
-  # For persistent config, set PODCAST_IDS and SOURCE_PLAYLIST_ID as
-  # repository variables: Settings → Secrets and variables → Variables.
   workflow_dispatch:
     inputs:
       mode:
@@ -15,11 +13,6 @@ on:
           - full
           - podcast-only
           - dry-run
-      podcast_ids:
-        description: 'Podcast show IDs, comma-separated (overrides PODCAST_IDS variable)'
-        required: false
-      source_playlist_id:
-        description: 'Playlist ID to pull songs from (overrides SOURCE_PLAYLIST_ID variable)'
         required: false
 
   # Scheduled runs (Monday–Friday only). GitHub Actions cron runs in UTC.

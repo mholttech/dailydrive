@@ -582,8 +582,21 @@ async function main() {
     return true;
   });
 
+  const pinnedPodcasts = filteredPodcasts.filter((podcast) => podcast.position === "first");
+  const shuffledPodcasts = shuffle(filteredPodcasts.filter((podcast) => podcast.position !== "first"));
+  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts];
+
+  if (orderedPodcasts.length > 0) {
+    console.log(
+      "🎙️ Podcast order:",
+      orderedPodcasts
+        .map((podcast) => (podcast.position === "first" ? `${podcast.name} [pinned]` : podcast.name))
+        .join(" -> ")
+    );
+  }
+
   // Step 5: Fetch the latest podcast episodes
-  const episodes = await fetchPodcastEpisodes(spotifyApi, filteredPodcasts);
+  const episodes = await fetchPodcastEpisodes(spotifyApi, orderedPodcasts);
 
   // ...existing code...
 

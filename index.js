@@ -17,7 +17,12 @@ const fs = require("fs");
 // --- Third-party libraries (installed via npm install) ---
 const yaml = require("js-yaml");               // Parses YAML config files
 const SpotifyWebApi = require("spotify-web-api-node"); // Wraps the Spotify Web API
-const { prepareEpisodeOrdering } = require("./episode-order");
+const {
+  getLocalDateKey,
+  preparePodcastOrdering,
+  prepareEpisodeOrdering,
+  composePlaylistOrder,
+} = require("./episode-order");
 
 // --- File paths used by the script ---
 const TOKEN_FILE = ".spotify-token.json";  // Stores your Spotify OAuth tokens (created by setup.js)
@@ -183,13 +188,13 @@ async function refreshTokenIfNeeded(spotifyApi, token) {
  * quickly on Spotify. If you see "[unavailable]" in your playlist, run the
  * script again to fetch the latest episode.
  */
-async function fetchPodcastEpisodes(spotifyApi, podcasts) {
+async function fetchPodcastEpisodes(spotifyApi, podcasts, timezone) {
   const episodes = [];
 
 
   // Load persistent state for random podcast selection
   const state = loadState();
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = getLocalDateKey(new Date(), timezone || "America/Los_Angeles");
   if (!state.random_podcasts) state.random_podcasts = {};
 
   for (const podcast of podcasts) {
@@ -251,6 +256,8 @@ async function fetchPodcastEpisodes(spotifyApi, podcasts) {
           show: podcast.name,
           type: "episode",
           position: podcast.position || null,
+          positionRank: podcast.positionRank ?? null,
+          overridePositionRank: podcast.overridePositionRank ?? null,
         });
         console.log(`    📌 ${episode.name}`);
       }
@@ -566,40 +573,36 @@ async function main() {
     process.exit(1);
   }
 
+  const scheduleTimezone = config.schedule?.timezone || "America/Los_Angeles";
 
-  // Step 4.5: Filter podcasts based on morning_only flag and America/Los_Angeles timezone
-  function isMorningInPST() {
-    // Use Intl.DateTimeFormat to get hour in America/Los_Angeles
-    const now = new Date();
-    const options = { hour: 'numeric', hour12: false, timeZone: 'America/Los_Angeles' };
-    const hour = Number(new Intl.DateTimeFormat('en-US', options).format(now));
-    return hour < 12;
-  }
-  const allPodcasts = config.podcasts || [];
-  const filteredPodcasts = allPodcasts.filter(podcast => {
-    if (podcast.morning_only) {
-      return isMorningInPST();
-    }
-    return true;
+  // Step 4.5: Order podcasts with window rules in the configured timezone.
+  const orderedPodcasts = preparePodcastOrdering(config.podcasts || [], {
+    now: new Date(),
+    timezone: scheduleTimezone,
+    shuffleFn: shuffle,
   });
 
-  const pinnedPodcasts = filteredPodcasts.filter((podcast) => podcast.position === "first");
-  const shuffledPodcasts = shuffle(filteredPodcasts.filter((podcast) => podcast.position !== "first"));
-  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts];
-
   if (orderedPodcasts.length > 0) {
-    console.log("🎙️ Podcast block order:");
+    console.log(`🕒 Schedule timezone: ${scheduleTimezone}`);
+    console.log("🎙️ Podcast order:");
     orderedPodcasts.forEach((podcast, index) => {
-      const label = podcast.position === "first" ? `${podcast.name} [pinned]` : podcast.name;
+      const label =
+        podcast.overridePositionRank != null
+          ? `${podcast.name} [override ${podcast.overridePositionRank}]`
+          : podcast.positionRank != null
+            ? `${podcast.name} [position ${podcast.positionRank}]`
+            : podcast.name;
       const details = [`episodes=${podcast.episodes || 1}`];
-      if (podcast.random) details.push("random");
-      if (podcast.morning_only) details.push("morning_only");
+      if (podcast.window?.start && podcast.window?.end) {
+        details.push(`window=${podcast.window.start}-${podcast.window.end}`);
+      }
+      if (podcast.window?.override_position) details.push(`override_position=${podcast.window.override_position}`);
       console.log(`    ${String(index + 1).padStart(2, "0")}. ${label}${details.length ? ` (${details.join(", ")})` : ""}`);
     });
   }
 
   // Step 5: Fetch the latest podcast episodes
-  const episodes = await fetchPodcastEpisodes(spotifyApi, orderedPodcasts);
+  const episodes = await fetchPodcastEpisodes(spotifyApi, orderedPodcasts, scheduleTimezone);
 
   // ...existing code...
 
@@ -631,18 +634,25 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 8: Randomize individual non-pinned episodes while keeping pinned ones first.
-  const { pinnedEpisodes, shuffledEpisodes } = prepareEpisodeOrdering(episodes);
+  // Step 8: Randomize the remaining episodes while keeping window overrides and positions first.
+  const orderedEpisodes = prepareEpisodeOrdering(episodes);
 
-  console.log("🎙️ Final episode order:");
-  [...pinnedEpisodes, ...shuffledEpisodes].forEach((episode, index) => {
-    const pin = episode.position === "first" ? " [pinned]" : "";
-    console.log(`    ${String(index + 1).padStart(2, "0")}. [${episode.show}] ${episode.name}${pin}`);
-  });
+  console.log("🎙️ Episode order:");
+  [
+    ...(orderedEpisodes.overrideRankedEpisodes || []),
+    ...(orderedEpisodes.positionedEpisodes || []),
+    ...(orderedEpisodes.shuffledEpisodes || []),
+  ].forEach(
+    (episode, index) => {
+      const override = episode.overridePositionRank != null ? ` [override ${episode.overridePositionRank}]` : "";
+      const position = episode.overridePositionRank == null && episode.positionRank != null ? ` [position ${episode.positionRank}]` : "";
+      console.log(`    ${String(index + 1).padStart(2, "0")}. [${episode.show}] ${episode.name}${override}${position}`);
+    }
+  );
 
   // Step 9: Mix podcasts and music according to the configured pattern
   console.log(`\n🔀 Mixing with pattern: ${config.mix_pattern || "PMMM"}`);
-  const mixed = [...pinnedEpisodes, ...mixContent(shuffledEpisodes, tracks, config.mix_pattern)];
+  const mixed = composePlaylistOrder(orderedEpisodes, tracks, config.mix_pattern, mixContent);
 
   console.log("📋 Final playlist order:");
   mixed.forEach((item, index) => {

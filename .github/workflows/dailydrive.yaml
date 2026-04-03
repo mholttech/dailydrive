@@ -43,44 +43,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Builds config.yaml from secrets + PODCAST_IDS/SOURCE_PLAYLIST_ID.
-      # For scheduled runs, set PODCAST_IDS and SOURCE_PLAYLIST_ID as repository variables.
-      # For manual runs, the workflow_dispatch inputs above override those variables.
-      - name: Write config.yaml
+      # Copies config.yaml and injects secrets for CI run using Node.js
+      - name: Prepare config.yaml with secrets
         env:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
-          SPOTIFY_PLAYLIST_ID: ${{ vars.SPOTIFY_PLAYLIST_ID }}
-          PODCAST_IDS: ${{ github.event.inputs.podcast_ids || vars.PODCAST_IDS }}
-          SOURCE_PLAYLIST_ID: ${{ github.event.inputs.source_playlist_id || vars.SOURCE_PLAYLIST_ID }}
         run: |
-          node - <<'EOF'
-          const yaml = require('js-yaml');
-          const fs   = require('fs');
-
-          const podcastIds   = (process.env.PODCAST_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-          const sourcePlId   = (process.env.SOURCE_PLAYLIST_ID || '').trim();
-
-          const config = {
-            spotify: {
-              client_id:    process.env.SPOTIFY_CLIENT_ID,
-              client_secret: process.env.SPOTIFY_CLIENT_SECRET,
-              redirect_uri: 'http://127.0.0.1:8888/callback',
-            },
-            playlist_id: process.env.SPOTIFY_PLAYLIST_ID,
-            podcasts: podcastIds.map(id => ({ name: id, id, episodes: 1 })),
-            music: {
-              top_tracks: { enabled: true, time_range: 'medium_term', count: 60 },
-              ...(sourcePlId ? { playlists: [{ name: 'Source Playlist', id: sourcePlId }] } : {}),
-              total_songs: 60,
-              shuffle: true,
-            },
-            mix_pattern: 'PMMMM',
-          };
-
-          fs.writeFileSync('config.yaml', yaml.dump(config));
-          console.log(`config.yaml written — ${podcastIds.length} podcast(s)${sourcePlId ? ', 1 source playlist' : ''}`);
-          EOF
+          node -e '
+            const fs = require("fs");
+            const yaml = require("js-yaml");
+            const config = yaml.load(fs.readFileSync("config.yaml", "utf8"));
+            config.spotify.client_id = process.env.SPOTIFY_CLIENT_ID;
+            config.spotify.client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+            fs.writeFileSync("config.yaml", yaml.dump(config));
+            console.log("config.yaml prepared with injected secrets.");
+          '
 
       # Writes the token file using your stored refresh token.
       # expires_at is set to 0 so index.js always refreshes the access token on startup.
@@ -88,8 +65,7 @@ jobs:
         env:
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
         run: |
-          printf '{\n  "access_token": "",\n  "refresh_token": "%s",\n  "expires_at": 0\n}\n' \
-            "$SPOTIFY_REFRESH_TOKEN" > .spotify-token.json
+          echo '{"access_token":"","refresh_token":"'"$SPOTIFY_REFRESH_TOKEN"'","expires_at":0}' > .spotify-token.json
 
       - name: Run Daily Drive
         run: |

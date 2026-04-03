@@ -82,7 +82,7 @@ app.get("/callback", async (req, res) => {
       expires_at: Date.now() + data.body.expires_in * 1000,
     };
 
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData, null, 2));
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData));
 
     res.send(
       "<h1>✅ Success!</h1><p>You can close this window. Daily Drive is ready to go!</p>"

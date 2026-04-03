@@ -59,7 +59,7 @@ function loadToken() {
  * Saves the OAuth token back to disk (called after a token refresh).
  */
 function saveToken(tokenData) {
-  fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData, null, 2));
+  fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData));
 }
 
 /**
@@ -136,34 +136,58 @@ async function refreshTokenIfNeeded(spotifyApi, token) {
 async function fetchPodcastEpisodes(spotifyApi, podcasts) {
   const episodes = [];
 
+
   for (const podcast of podcasts) {
-    // How many recent episodes to grab (default: 1, configurable per podcast)
     const count = podcast.episodes || 1;
     console.log(`🎙️  Fetching ${count} episode(s) from: ${podcast.name}`);
-
     try {
-      // Ask Spotify for the most recent episodes of this show
-      const data = await spotifyApi.getShowEpisodes(podcast.id, {
-        limit: count,
-        market: "US", // Required for episode availability
-      });
-
-      for (const episode of data.body.items) {
+      let selectedEpisodes = [];
+      if (podcast.random) {
+        // Always include the latest episode first
+        const latestData = await spotifyApi.getShowEpisodes(podcast.id, {
+          limit: 1,
+          market: "US",
+        });
+        const latest = latestData.body.items[0];
+        if (latest) {
+          selectedEpisodes.push(latest);
+        }
+        // Fetch a pool of recent episodes (up to 50)
+        const data = await spotifyApi.getShowEpisodes(podcast.id, {
+          limit: 50,
+          market: "US",
+        });
+        const pool = data.body.items.filter(ep => !selectedEpisodes.find(e => e.uri === ep.uri));
+        // Randomly select (count-1) more episodes
+        const used = new Set();
+        while (selectedEpisodes.length < count && used.size < pool.length) {
+          let idx;
+          do { idx = Math.floor(Math.random() * pool.length); } while (used.has(idx));
+          used.add(idx);
+          selectedEpisodes.push(pool[idx]);
+        }
+      } else {
+        // Just fetch the most recent episodes
+        const data = await spotifyApi.getShowEpisodes(podcast.id, {
+          limit: count,
+          market: "US",
+        });
+        selectedEpisodes = data.body.items;
+      }
+      for (const episode of selectedEpisodes) {
         episodes.push({
-          uri: episode.uri,      // Spotify URI like "spotify:episode:abc123"
+          uri: episode.uri,
           name: episode.name,
           show: podcast.name,
           type: "episode",
-          position: podcast.position || null, // "first" = pinned to top of playlist
+          position: podcast.position || null,
         });
         console.log(`    📌 ${episode.name}`);
       }
     } catch (err) {
-      // Don't crash if one podcast fails — just warn and continue with the rest
       console.error(`    ⚠️  Failed to fetch ${podcast.name}: ${err.message}`);
     }
   }
-
   return episodes;
 }
 
@@ -475,19 +499,7 @@ async function main() {
   // Step 5: Fetch the latest podcast episodes
   const episodes = await fetchPodcastEpisodes(spotifyApi, config.podcasts || []);
 
-  // Step 6: Check if episodes have changed since last run
-  // This prevents unnecessary playlist updates that would reset your listening position
-  const state = loadState();
-  const currentEpisodeUris = episodes.map((e) => e.uri).sort().join(",");
-  const previousEpisodeUris = state.episode_uris || "";
-
-  // In podcast-only mode, skip if episodes haven't changed (no point reshuffling)
-  // In full refresh mode, ALWAYS proceed — we want fresh music even if podcasts are the same
-  if (!DRY_RUN && PODCAST_ONLY && currentEpisodeUris === previousEpisodeUris && episodes.length > 0) {
-    console.log("\n⏭️  No new podcast episodes detected. Playlist unchanged.");
-    console.log("   (Same episodes as last update — skipping to avoid disruption)\n");
-    process.exit(0);
-  }
+  // ...existing code...
 
   // Step 7: Get music tracks
   let tracks;
@@ -496,6 +508,7 @@ async function main() {
     // --- Podcast-only mode (hourly) ---
     // Reuse the music tracks saved from the last full refresh.
     // This keeps your music stable all day while swapping in fresh podcast episodes.
+    const state = loadState();
     if (state.music_tracks && state.music_tracks.length > 0) {
       tracks = state.music_tracks;
       console.log(`🎵 Reusing ${tracks.length} saved music tracks from last full refresh`);
@@ -535,15 +548,12 @@ async function main() {
   // Step 10: Push the final mixed playlist to Spotify
   await updatePlaylist(spotifyApi, config.playlist_id, mixed);
 
-  // Step 11: Save state so the next run can detect if episodes have changed
+  // Step 11: Save state (only music tracks and last refresh info)
   if (!DRY_RUN) {
-    const newState = {
-      episode_uris: currentEpisodeUris,
-      last_updated: new Date().toISOString(),
-    };
-
+    const newState = {};
     if (PODCAST_ONLY) {
       // In podcast-only mode, preserve the saved music tracks from the full refresh
+      const state = loadState();
       newState.music_tracks = state.music_tracks || tracks;
       newState.last_full_refresh = state.last_full_refresh || null;
     } else {
@@ -551,7 +561,6 @@ async function main() {
       newState.music_tracks = tracks;
       newState.last_full_refresh = new Date().toISOString();
     }
-
     saveState(newState);
     console.log("💾 State saved to state.json");
   }

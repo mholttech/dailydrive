@@ -72,7 +72,7 @@ jobs:
           case "$MODE" in
             podcast-only) node index.js --podcast-only > dd_output.txt 2>&1 ;;
             dry-run)      node index.js --dry-run > dd_output.txt 2>&1 ;;
-            *)            npm start > dd_output.txt 2>&1 ;;
+            *)            node index.js > dd_output.txt 2>&1 ;;
           esac
       # Debug: Print state-gh.json after run
       - name: Debug - Print state-gh.json after run

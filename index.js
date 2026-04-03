@@ -22,6 +22,7 @@ const SpotifyWebApi = require("spotify-web-api-node"); // Wraps the Spotify Web 
 const TOKEN_FILE = ".spotify-token.json";  // Stores your Spotify OAuth tokens (created by setup.js)
 const CONFIG_FILE = "config.yaml";         // Your configuration (podcasts, music, schedule, etc.)
 const STATE_FILE = "state.json";           // Caches last run's episode URIs to detect changes
+const STATE_GH_FILE = "state-gh.json";     // GitHub Actions state handoff file
 
 // Check command-line flags
 const DRY_RUN = process.argv.includes("--dry-run");       // Shows what would happen without changing the playlist
@@ -88,11 +89,33 @@ function loadState() {
  */
 function saveState(state) {
   const compact = JSON.stringify(state);
+  const randomPodcastsState = JSON.stringify({ random_podcasts: state.random_podcasts || {} });
+  const summary = {
+    topLevelKeys: Object.keys(state || {}),
+    randomPodcastShows: Object.keys(state.random_podcasts || {}),
+    musicTracks: Array.isArray(state.music_tracks) ? state.music_tracks.length : 0,
+    lastFullRefresh: state.last_full_refresh || null,
+  };
+  console.log("🧪 State debug: preparing state writes");
+  console.log(`    ${STATE_FILE}: ${compact.length} bytes`);
+  console.log(`    ${STATE_GH_FILE}: ${randomPodcastsState.length} bytes`);
+  console.log(`    summary: ${JSON.stringify(summary)}`);
+  console.log(`    ${STATE_GH_FILE} payload: ${randomPodcastsState}`);
+
   // Always write to disk for local/dev
   fs.writeFileSync(STATE_FILE, compact);
   // For GitHub Actions, only persist random_podcasts
-  const randomPodcastsState = JSON.stringify({ random_podcasts: state.random_podcasts || {} });
-  fs.writeFileSync("state-gh.json", randomPodcastsState);
+  fs.writeFileSync(STATE_GH_FILE, randomPodcastsState);
+
+  try {
+    const ghState = fs.readFileSync(STATE_GH_FILE, "utf8");
+    const parsedGhState = JSON.parse(ghState);
+    console.log(
+      `🧪 State debug: verified ${STATE_GH_FILE} with ${Object.keys(parsedGhState.random_podcasts || {}).length} podcast(s)`
+    );
+  } catch (err) {
+    console.log(`🧪 State debug: verification failed for ${STATE_GH_FILE}: ${err.message}`);
+  }
 }
 
 /**
@@ -612,7 +635,7 @@ async function main() {
       state.last_full_refresh = new Date().toISOString();
     }
     saveState(state);
-    console.log("💾 State saved to state.json");
+    console.log(`💾 State saved to ${STATE_FILE} and ${STATE_GH_FILE}`);
   }
 }
 

@@ -15,11 +15,10 @@ on:
           - podcast-only
           - dry-run
 
-  # Scheduled runs (Monday–Friday only). GitHub Actions cron runs in UTC.
-  # These are set to EST (UTC-5). During EDT (UTC-4, roughly Mar–Nov),
-  # runs will fire at 6:30 AM and 4:30 PM ET instead — still reasonable.
+  # Scheduled runs every day, every hour, at 10 minutes past the hour.
+  # GitHub Actions cron runs in UTC.
   schedule:
-    - cron: '10 * * * 1-5'  # 10 minutes past every hour, Monday–Friday
+    - cron: '10 * * * *'
 
 jobs:
   update-playlist:

@@ -17,6 +17,7 @@ const fs = require("fs");
 // --- Third-party libraries (installed via npm install) ---
 const yaml = require("js-yaml");               // Parses YAML config files
 const SpotifyWebApi = require("spotify-web-api-node"); // Wraps the Spotify Web API
+const { prepareEpisodeOrdering } = require("./episode-order");
 
 // --- File paths used by the script ---
 const TOKEN_FILE = ".spotify-token.json";  // Stores your Spotify OAuth tokens (created by setup.js)
@@ -250,9 +251,8 @@ async function fetchPodcastEpisodes(spotifyApi, podcasts) {
           show: podcast.name,
           type: "episode",
           position: podcast.position || null,
-          podcastOrder: podcast._order || null,
         });
-        console.log(`    📌 [${String(podcast._order || "?").padStart(2, "0")}] ${episode.name}`);
+        console.log(`    📌 ${episode.name}`);
       }
     } catch (err) {
       console.error(`    ⚠️  Failed to fetch ${podcast.name}: ${err.message}`);
@@ -585,10 +585,7 @@ async function main() {
 
   const pinnedPodcasts = filteredPodcasts.filter((podcast) => podcast.position === "first");
   const shuffledPodcasts = shuffle(filteredPodcasts.filter((podcast) => podcast.position !== "first"));
-  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts].map((podcast, index) => ({
-    ...podcast,
-    _order: index + 1,
-  }));
+  const orderedPodcasts = [...pinnedPodcasts, ...shuffledPodcasts];
 
   if (orderedPodcasts.length > 0) {
     console.log("🎙️ Podcast block order:");
@@ -634,40 +631,27 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 8: Separate pinned episodes (position: "first") from mixable ones
-  // Pinned episodes go at the very top of the playlist, before the mix pattern starts
-  const pinnedFirst = [];
-  const mixableEpisodes = [];
-  for (const ep of episodes) {
-    if (ep.position === "first") {
-      pinnedFirst.push(ep);
-    } else {
-      mixableEpisodes.push(ep);
-    }
-  }
+  // Step 8: Randomize individual non-pinned episodes while keeping pinned ones first.
+  const { pinnedEpisodes, shuffledEpisodes } = prepareEpisodeOrdering(episodes);
+
+  console.log("🎙️ Final episode order:");
+  [...pinnedEpisodes, ...shuffledEpisodes].forEach((episode, index) => {
+    const pin = episode.position === "first" ? " [pinned]" : "";
+    console.log(`    ${String(index + 1).padStart(2, "0")}. [${episode.show}] ${episode.name}${pin}`);
+  });
 
   // Step 9: Mix podcasts and music according to the configured pattern
   console.log(`\n🔀 Mixing with pattern: ${config.mix_pattern || "PMMM"}`);
-  const mixed = [...pinnedFirst, ...mixContent(mixableEpisodes, tracks, config.mix_pattern)];
+  const mixed = [...pinnedEpisodes, ...mixContent(shuffledEpisodes, tracks, config.mix_pattern)];
 
   console.log("📋 Final playlist order:");
   mixed.forEach((item, index) => {
     if (item.type === "episode") {
-      const block = item.podcastOrder ? `block ${String(item.podcastOrder).padStart(2, "0")}` : "block ?";
-      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎙️ [${block}] [${item.show}] ${item.name}`);
+      console.log(`    ${String(index + 1).padStart(2, "0")}. 🎙️ [${item.show}] ${item.name}`);
     } else {
       console.log(`    ${String(index + 1).padStart(2, "0")}. 🎵 ${item.name} — ${item.artist}`);
     }
   });
-
-  const mixedEpisodes = mixed.filter((item) => item.type === "episode");
-  if (mixedEpisodes.length > 0) {
-    console.log("🎙️ Final podcast item order:");
-    mixedEpisodes.forEach((item, index) => {
-      const block = item.podcastOrder ? `block ${String(item.podcastOrder).padStart(2, "0")}` : "block ?";
-      console.log(`    ${String(index + 1).padStart(2, "0")}. [${block}] [${item.show}] ${item.name}`);
-    });
-  }
 
   // Step 10: Push the final mixed playlist to Spotify
   await updatePlaylist(spotifyApi, config.playlist_id, mixed);

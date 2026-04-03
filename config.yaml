@@ -90,7 +90,7 @@ music:
   top_tracks:
     enabled: true
     time_range: "medium_term"   # short_term (~4 weeks), medium_term (~6 months), long_term (all time)
-    count: 30                  # fetch pool size (shuffled + trimmed to total_songs)
+    count: 200                  # fetch pool size (shuffled + trimmed to total_songs)
 
   # Genre-based music discovery (optional)
   # Finds fresh tracks by genre via Spotify search
@@ -109,7 +109,7 @@ music:
 
   # How many songs to include total
   # (The original Daily Drive had ~19 songs and ~5 podcast segments)
-  total_songs: 60
+  total_songs: 80
 
   # Shuffle the songs? (true/false)
   shuffle: true
@@ -125,4 +125,4 @@ music:
 #   "PMMMM"    → 1 podcast, 4 songs, repeat...
 #   "PMMPMMM"  → 1 podcast, 2 songs, 1 podcast, 3 songs...
 #   "PM"       → alternating podcast and song
-mix_pattern: "PMMMM"
+mix_pattern: "MMPMMMMP"

@@ -63,10 +63,17 @@ function saveToken(tokenData) {
 }
 
 /**
- * Loads the state file that tracks which episodes were in the last playlist update.
- * Returns an empty object if the file doesn't exist or is corrupted.
+ * Loads the state from process.env.STATE_JSON (compact JSON) if present,
+ * otherwise from state.json on disk. Returns an empty object if not found.
  */
 function loadState() {
+  if (process.env.STATE_JSON) {
+    try {
+      return JSON.parse(process.env.STATE_JSON);
+    } catch {
+      return {};
+    }
+  }
   if (!fs.existsSync(STATE_FILE)) return {};
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -76,10 +83,15 @@ function loadState() {
 }
 
 /**
- * Saves state to disk so the next run can compare episodes and skip if nothing changed.
+ * Saves state as compact JSON. In GitHub Actions, prints a special line for workflow to capture.
+ * Locally, also writes to state.json for dev/debug.
  */
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  const compact = JSON.stringify(state);
+  // Always write to disk for local/dev
+  fs.writeFileSync(STATE_FILE, compact);
+  // Always write to state-gh.json for GitHub Actions workflow to read
+  fs.writeFileSync("state-gh.json", compact);
 }
 
 /**
@@ -137,34 +149,54 @@ async function fetchPodcastEpisodes(spotifyApi, podcasts) {
   const episodes = [];
 
 
+  // Load persistent state for random podcast selection
+  const state = loadState();
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  if (!state.random_podcasts) state.random_podcasts = {};
+
   for (const podcast of podcasts) {
     const count = podcast.episodes || 1;
     console.log(`🎙️  Fetching ${count} episode(s) from: ${podcast.name}`);
     try {
       let selectedEpisodes = [];
       if (podcast.random) {
-        // Always include the latest episode first
-        const latestData = await spotifyApi.getShowEpisodes(podcast.id, {
-          limit: 1,
-          market: "US",
-        });
-        const latest = latestData.body.items[0];
-        if (latest) {
-          selectedEpisodes.push(latest);
-        }
-        // Fetch a pool of recent episodes (up to 50)
-        const data = await spotifyApi.getShowEpisodes(podcast.id, {
-          limit: 50,
-          market: "US",
-        });
-        const pool = data.body.items.filter(ep => !selectedEpisodes.find(e => e.uri === ep.uri));
-        // Randomly select (count-1) more episodes
-        const used = new Set();
-        while (selectedEpisodes.length < count && used.size < pool.length) {
-          let idx;
-          do { idx = Math.floor(Math.random() * pool.length); } while (used.has(idx));
-          used.add(idx);
-          selectedEpisodes.push(pool[idx]);
+        // Use persistent selection for this podcast and date if available
+        if (!state.random_podcasts[podcast.id]) state.random_podcasts[podcast.id] = {};
+        if (state.random_podcasts[podcast.id][today]) {
+          // Use saved episode URIs for today
+          const uris = state.random_podcasts[podcast.id][today];
+          // Fetch episode details for these URIs
+          const data = await spotifyApi.getShowEpisodes(podcast.id, { limit: 50, market: "US" });
+          const pool = data.body.items;
+          selectedEpisodes = uris.map(uri => pool.find(ep => ep.uri === uri)).filter(Boolean);
+        } else {
+          // Always include the latest episode first
+          const latestData = await spotifyApi.getShowEpisodes(podcast.id, {
+            limit: 1,
+            market: "US",
+          });
+          const latest = latestData.body.items[0];
+          if (latest) {
+            selectedEpisodes.push(latest);
+          }
+          // Fetch a pool of recent episodes (up to 50)
+          const data = await spotifyApi.getShowEpisodes(podcast.id, {
+            limit: 50,
+            market: "US",
+          });
+          // Exclude the latest episode if already included
+          const pool = data.body.items.filter(ep => !selectedEpisodes.find(e => e.uri === ep.uri));
+          // Randomly select (count-1) more episodes
+          const used = new Set();
+          while (selectedEpisodes.length < count && used.size < pool.length) {
+            let idx;
+            do { idx = Math.floor(Math.random() * pool.length); } while (used.has(idx));
+            used.add(idx);
+            selectedEpisodes.push(pool[idx]);
+          }
+          // Save today's selection for this podcast
+          state.random_podcasts[podcast.id][today] = selectedEpisodes.map(ep => ep.uri);
+          saveState(state);
         }
       } else {
         // Just fetch the most recent episodes

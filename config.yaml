@@ -63,6 +63,7 @@ podcasts:
   - name: "NPR Politics Podcast"
     id: "2PnWnDNwU3wKesCHCpy252"
     episodes: 3
+    random: true   # Always include latest + 2 random recent episodes
 
   - name: "CNN Five Things"
     id: "1xGSLDgVYxLybmXpui6wwo"
@@ -74,11 +75,13 @@ podcasts:
 
   - name: "Freakonomics Radio"
     id: "6z4NLXyHPga1UmSJsPK7G1"
-    episodes: 1
+    episodes: 3
+    random: true   # Always include latest + 2 random recent episodes
 
   - name: "The Journal (WSJ)"
     id: "0KxdEdeY2Wb3zr28dMlQva"
-    episodes: 1
+    episodes: 3
+    random: true   # Always include latest + 2 random recent episodes
 
   - name: "FT News"
     id: "1410RabA4XOqO6IV8p0gYF"

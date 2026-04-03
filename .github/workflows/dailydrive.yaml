@@ -17,9 +17,8 @@ on:
   # Scheduled runs (Monday–Friday only). GitHub Actions cron runs in UTC.
   # These are set to EST (UTC-5). During EDT (UTC-4, roughly Mar–Nov),
   # runs will fire at 6:30 AM and 4:30 PM ET instead — still reasonable.
-  # schedule:
-  #   - cron: '30 10 * * 1-5'  # 5:30 AM EST / 6:30 AM EDT — morning commute
-  #   - cron: '30 20 * * 1-5'  # 3:30 PM EST / 4:30 PM EDT — afternoon commute
+  schedule:
+    - cron: '10 * * * 1-5'  # 10 minutes past every hour, Monday–Friday
 
 jobs:
   update-playlist:
@@ -59,14 +58,44 @@ jobs:
         run: |
           echo '{"access_token":"","refresh_token":"'"$SPOTIFY_REFRESH_TOKEN"'","expires_at":0}' > .spotify-token.json
 
+
+      # Restore persistent state from GitHub Actions variable (if set)
+      - name: Restore persistent state
+        id: restore_state
+        run: |
+          echo "Restoring persistent state..."
+          if [ -n "${{ vars.DD_STATE_JSON }}" ]; then
+            echo "STATE_JSON=${{ vars.DD_STATE_JSON }}" >> $GITHUB_ENV
+            echo "Loaded state from DD_STATE_JSON variable."
+          else
+            echo "No DD_STATE_JSON variable set; starting with empty state."
+          fi
+
       - name: Run Daily Drive
+        id: run_dd
         run: |
           MODE="${{ github.event.inputs.mode || 'full' }}"
           case "$MODE" in
-            podcast-only) node index.js --podcast-only ;;
-            dry-run)      node index.js --dry-run ;;
-            *)            npm start ;;
+            podcast-only) node index.js --podcast-only > dd_output.txt 2>&1 ;;
+            dry-run)      node index.js --dry-run > dd_output.txt 2>&1 ;;
+            *)            npm start > dd_output.txt 2>&1 ;;
           esac
+
+      # Persist new state from state-gh.json file
+      - name: Persist state to GitHub variable
+        if: always()
+        run: |
+          if [ -f state-gh.json ]; then
+            STATE=$(cat state-gh.json)
+            if [ -n "$STATE" ]; then
+              echo "Found new state in state-gh.json. Saving to repository variable DD_STATE_JSON."
+              gh variable set DD_STATE_JSON --body "$STATE"
+            else
+              echo "state-gh.json is empty."
+            fi
+          else
+            echo "state-gh.json not found."
+          fi
 
       # Optional: write the (possibly rotated) refresh token back to GitHub Secrets.
       # Requires a Personal Access Token with `secrets:write` scope stored as GH_PAT.
